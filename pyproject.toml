@@ -1,0 +1,18 @@
+[project]
+name = "edge-assistant"
+version = "0.1.0"
+description = "Lean research+editor CLI"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+  "openai",
+  "typer",
+  "rich"
+]
+
+[project.scripts]
+edge-assistant = "edge_assistant.cli:app"
+
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
