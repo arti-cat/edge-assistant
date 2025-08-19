@@ -7,7 +7,8 @@ requires-python = ">=3.10"
 dependencies = [
   "openai",
   "typer",
-  "rich"
+  "rich",
+  "platformdirs"
 ]
 
 [project.scripts]

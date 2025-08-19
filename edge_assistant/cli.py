@@ -1,211 +1,172 @@
 #!/usr/bin/env python3
 from __future__ import annotations
-import os, re, json, difflib, datetime
+import json
 from pathlib import Path
-from typing import Iterable, List, Tuple, Optional, Any, Dict
-
+from typing import Optional
 import typer
 from rich.console import Console
 from rich.markdown import Markdown
 from rich.panel import Panel
 from rich.syntax import Syntax
 
-from openai import OpenAI
+from .engine import Engine
+from .state import get_thread_id, set_thread_id, kb_ids, add_kb_ids
+from .tools import unified, extract_between, extract_urls_from_response, function_tools
 
 app = typer.Typer(add_completion=False)
 console = Console()
-STATE_PATH = Path.home() / ".edge_assistant_state.json"
+eng = Engine()
 
-# --- Core ---------------------------------------------------------------
-
-def client() -> OpenAI:
-    key = os.getenv("OPENAI_API_KEY")
-    if not key:
-        raise SystemExit("OPENAI_API_KEY not set")
-    return OpenAI(api_key=key)
-
-def load_state() -> Dict[str, Any]:
-    if STATE_PATH.exists():
-        try:
-            return json.loads(STATE_PATH.read_text())
-        except Exception:
-            return {}
-    return {}
-
-def save_state(data: Dict[str, Any]) -> None:
-    STATE_PATH.write_text(json.dumps(data, indent=2))
-
-def nowstamp() -> str:
-    return datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
-
-# --- Utilities ----------------------------------------------------------
-
-def unified(a: str, b: str, path: str) -> str:
-    diff = difflib.unified_diff(
-        a.splitlines(True),
-        b.splitlines(True),
-        fromfile=f"{path} (original)",
-        tofile=f"{path} (proposed)",
-        lineterm=""
-    )
-    return "".join(diff)
-
-def extract_between_tags(text: str, start_tag: str, end_tag: str) -> Optional[str]:
-    m = re.search(re.escape(start_tag) + r"(.*?)" + re.escape(end_tag),
-                  text, flags=re.DOTALL)
-    return m.group(1) if m else None
-
-def dedupe(seq: Iterable[str]) -> List[str]:
-    seen = set(); out = []
-    for x in seq:
-        if x not in seen:
-            seen.add(x); out.append(x)
-    return out
-
-def extract_urls_from_response(resp: Any) -> List[Tuple[str, str]]:
-    """
-    Pull url citations from Responses API output if present.
-    Falls back to regex from text.
-    """
-    urls: List[Tuple[str, str]] = []
-
-    # 1) Try structured annotations (Cookbook shows content[].annotations[].type=='url_citation')
-    try:
-        outputs = getattr(resp, "output", []) or []
-        for item in outputs:
-            content = getattr(item, "content", []) or []
-            for c in content:
-                anns = c.get("annotations") if isinstance(c, dict) else getattr(c, "annotations", None)
-                if not anns: continue
-                for a in anns:
-                    atype = a.get("type") if isinstance(a, dict) else getattr(a, "type", "")
-                    if atype == "url_citation":
-                        title = a.get("title") if isinstance(a, dict) else getattr(a, "title", "")
-                        url   = a.get("url") if isinstance(a, dict) else getattr(a, "url", "")
-                        if url:
-                            urls.append((title or "", url))
-    except Exception:
-        pass
-
-    # 2) Fallback: scrape URLs from text
-    text = getattr(resp, "output_text", "") or ""
-    for u in re.findall(r"https?://\S+", text):
-        urls.append(("", u.rstrip(").,]")))
-
-    # Dedup by URL
-    seen = set(); out: List[Tuple[str,str]] = []
-    for title, u in urls:
-        if u not in seen:
-            seen.add(u); out.append((title, u))
-    return out
-
-# --- Commands -----------------------------------------------------------
-
+# ---------- ASK ----------
 @app.command("ask")
 def ask(
-    prompt: str = typer.Argument(..., help="Your question / instruction."),
-    model: str = typer.Option("gpt-4o-mini", "--model", "-m"),
-    continue_thread: bool = typer.Option(False, "--continue", "-c", help="Continue from last response in state."),
-    system: Optional[str] = typer.Option(None, "--system", help="Optional system instructions."),
+    prompt: str = typer.Argument(..., help="Your question/instruction."),
+    model: str = typer.Option(None, "--model", "-m"),
+    thread: Optional[str] = typer.Option(None, "--thread", "-t", help="Thread name to maintain context."),
+    stream: bool = typer.Option(False, "--stream", "-s", help="Stream tokens as they arrive"),
+    system: Optional[str] = typer.Option(None, "--system", help="Optional system instructions.")
 ):
-    """
-    General Q/A (no tools). Optionally continue the last thread.
-    """
-    st = load_state()
-    prev_id = st.get("last_response_id") if continue_thread else None
+    prev = get_thread_id(thread)
+    resp = eng.send(
+        input=prompt,
+        model=model,
+        instructions=system,
+        previous_response_id=prev,
+        stream=stream
+    )
+    if not stream:
+        console.print(Markdown(resp.output_text))
+    if getattr(resp, "id", None):
+        set_thread_id(resp.id, thread)
 
-    kwargs = dict(model=model, input=prompt)
-    if system:
-        kwargs["instructions"] = system
-    if prev_id:
-        kwargs["previous_response_id"] = prev_id
-
-    resp = client().responses.create(**kwargs)
-
-    console.print(Markdown(resp.output_text))
-    st["last_response_id"] = resp.id
-    save_state(st)
-
+# ---------- RESEARCH (web_search) ----------
 @app.command("research")
 def research(
-    query: str = typer.Argument(..., help="Research query"),
+    query: str = typer.Argument(...),
+    bullets: int = typer.Option(6, "--bullets", "-b"),
     model: str = typer.Option("gpt-4o", "--model", "-m"),
-    bullets: int = typer.Option(7, "--bullets", "-b", help="Target bullet count"),
-    region: Optional[str] = typer.Option(None, "--region", help="Optional region hint in prompt"),
+    as_json: bool = typer.Option(False, "--json", help="Return JSON instead of markdown"),
+    stream: bool = typer.Option(False, "--stream", "-s"),
 ):
-    """
-    Quick web-backed research with citations (hosted web_search).
-    """
+    schema = {
+        "type": "json_schema",
+        "json_schema": {
+            "name": "ResearchSummary",
+            "schema": {
+                "type": "object",
+                "properties": {
+                    "bullets": {"type": "array", "items": {"type": "string"}},
+                    "sources": {"type": "array", "items": {
+                        "type": "object",
+                        "properties": {
+                            "title": {"type": "string"},
+                            "url": {"type": "string", "format": "uri"}
+                        },
+                        "required": ["url"],
+                        "additionalProperties": False
+                    }},
+                    "risks_unknowns": {"type": "array", "items": {"type": "string"}}
+                },
+                "required": ["bullets", "sources"],
+                "additionalProperties": False
+            },
+            "strict": True
+        }
+    }
+
     prompt = (
         f"Summarize the latest on: {query}\n"
-        f"- Output {bullets} tight bullets.\n"
-        f"- Include inline bracketed citations where appropriate.\n"
-        f"- End with a short 'Risks & Unknowns' section.\n"
-        + (f"- Assume region={region} if relevant.\n" if region else "")
+        f"- Output {bullets} terse bullets.\n"
+        f"- Use bracketed citations inline.\n"
+        f"- End with 'Risks & Unknowns'."
     )
+    kwargs = dict(
+        input=prompt, model=model,
+        tools=[{"type": "web_search"}],
+        stream=stream
+    )
+    if as_json:
+        kwargs["response_format"] = schema
 
-    resp = client().responses.create(
+    resp = eng.send(**kwargs)
+    if as_json:
+        data = json.loads(resp.output_text)
+        console.print_json(data=data)
+    else:
+        console.print(Panel.fit(Markdown(resp.output_text), title="Summary"))
+        urls = extract_urls_from_response(resp)
+        if urls:
+            console.print("\n[bold]Sources[/bold]")
+            for i, (title, url) in enumerate(urls, 1):
+                console.print(f"{i}. {(title + ' — ') if title else ''}{url}")
+
+# ---------- KB INDEX / KB RESEARCH (file_search) ----------
+@app.command("kb-index")
+def kb_index(folder: Path = typer.Argument(..., exists=True, file_okay=False)):
+    count = 0
+    ids = []
+    for p in folder.rglob("*"):
+        if p.is_file() and p.suffix.lower() in {".md", ".txt", ".pdf", ".py", ".rst"}:
+            fid = eng.upload_for_kb(p)
+            ids.append(fid); count += 1
+    add_kb_ids(ids)
+    console.print(f"[green]Indexed {count} files ({len(ids)} new).[/green]")
+
+@app.command("kb-research")
+def kb_research(
+    query: str = typer.Argument(...),
+    model: str = typer.Option("gpt-4o", "--model", "-m"),
+    stream: bool = typer.Option(False, "--stream", "-s"),
+):
+    files = kb_ids()
+    if not files:
+        raise typer.Exit("No KB files. Run: edge-assistant kb-index ./docs")
+
+    resp = eng.send(
         model=model,
-        input=prompt,
-        tools=[{"type": "web_search"}],  # hosted tool
+        input=f"Answer using the provided knowledge files. Cite sources clearly. Q: {query}",
+        tools=[{"type": "file_search"}],
+        attachments=[{"file_id": fid, "tools": [{"type":"file_search"}]} for fid in files],
+        stream=stream,
     )
+    if not stream:
+        console.print(Markdown(resp.output_text))
 
-    console.print(Panel.fit(Markdown(resp.output_text), title="Summary"))
-
-    urls = extract_urls_from_response(resp)
-    if urls:
-        console.print("\n[bold]Sources[/bold]")
-        for i, (title, url) in enumerate(urls, 1):
-            label = f"{i}. {title} — {url}" if title else f"{i}. {url}"
-            console.print(label)
-
+# ---------- EDIT ----------
 @app.command("edit")
 def edit(
     path: Path = typer.Argument(..., exists=True, dir_okay=False, resolve_path=True),
     instruction: str = typer.Argument(..., help="Describe the change you want."),
     model: str = typer.Option("gpt-4o-mini", "--model", "-m"),
-    apply: bool = typer.Option(False, "--apply", help="Write changes to disk (default: dry-run)"),
-    backup: bool = typer.Option(True, "--backup/--no-backup", help="Save .bak before writing"),
+    apply: bool = typer.Option(False, "--apply", help="Write changes to disk"),
+    backup: bool = typer.Option(True, "--backup/--no-backup"),
 ):
-    """
-    Edit a file safely: model returns full new content; we show a diff, then optional apply.
-    """
     original = path.read_text(encoding="utf-8")
     sys_prompt = (
-        "You are a precise editor. Produce the full, final file content for the given file.\n"
-        "Rules:\n"
-        "1) Return ONLY the new file content wrapped exactly between:\n"
-        "<BEGIN_FILE>\n"
-        "(content)\n"
-        "<END_FILE>\n"
-        "2) Keep formatting stable. If no change is needed, return the original content."
+        "You are a precise editor. Produce the FULL new file content only.\n"
+        "Wrap it strictly between <BEGIN_FILE> and <END_FILE>."
     )
     user_prompt = (
-        f"File: {path.name}\n"
-        f"Instruction: {instruction}\n\n"
+        f"File: {path.name}\nInstruction: {instruction}\n\n"
         f"--- ORIGINAL START ---\n{original}\n--- ORIGINAL END ---"
     )
-
-    resp = client().responses.create(
+    resp = eng.send(
         model=model,
         instructions=sys_prompt,
         input=user_prompt,
     )
-
     text = resp.output_text
-    new_content = extract_between_tags(text, "<BEGIN_FILE>", "<END_FILE>") or text.strip()
+    new_content = extract_between(text, "<BEGIN_FILE>", "<END_FILE>") or text.strip()
     diff = unified(original, new_content, str(path))
 
     if not diff:
         console.print("[green]No changes proposed.[/green]")
         return
 
-    # show diff with syntax highlight
     console.print(Syntax(diff, "diff", theme="ansi_dark", word_wrap=True))
-
     if apply:
         if backup:
-            bak = path.with_suffix(path.suffix + f".{nowstamp()}.bak")
+            bak = path.with_suffix(path.suffix + ".bak")
             bak.write_text(original, encoding="utf-8")
             console.print(f"[dim]Backup -> {bak}[/dim]")
         path.write_text(new_content, encoding="utf-8")
@@ -213,5 +174,35 @@ def edit(
     else:
         console.print("[yellow]Dry run. Use --apply to write changes.[/yellow]")
 
-if __name__ == "__main__":
+# ---------- AGENT (optional tool calls with guardrails) ----------
+@app.command("agent")
+def agent(task: str, approve: bool = typer.Option(False, "--approve")):
+    resp = eng.send(
+        model="gpt-4o-mini",
+        instructions="You may call tools to modify files. Prefer minimal diffs and safe paths.",
+        input=task,
+        tools=function_tools(),
+    )
+    acted = False
+    for item in getattr(resp, "output", []) or []:
+        if getattr(item, "type", None) == "function_call" and item.name == "fs_write":
+            args = json.loads(item.arguments)
+            p = Path(args["path"]).expanduser().resolve()
+            before = p.read_text(encoding="utf-8") if p.exists() else ""
+            diff = unified(before, args["content"], str(p))
+            console.print(Syntax(diff, "diff", theme="ansi_dark"))
+            if approve:
+                p.parent.mkdir(parents=True, exist_ok=True)
+                p.write_text(args["content"], encoding="utf-8")
+                console.print(f"[green]Wrote {p}[/green]")
+            else:
+                console.print("[yellow]Dry run. Re-run with --approve to apply.[/yellow]")
+            acted = True
+    if not acted:
+        console.print(Markdown(getattr(resp, "output_text", "")))
+
+def main():
     app()
+
+if __name__ == "__main__":
+    main()
