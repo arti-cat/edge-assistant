@@ -2,11 +2,25 @@ from __future__ import annotations
 import json
 from pathlib import Path
 from typing import Any, Dict, List, Optional
-from platformdirs import user_config_dir, user_state_dir
+try:
+    from platformdirs import user_config_dir, user_state_dir  # type: ignore
+
+    def _user_config_dir(app: str) -> Path:
+        return Path(user_config_dir(app))
+
+    def _user_state_dir(app: str) -> Path:
+        return Path(user_state_dir(app))
+except Exception:
+    # Fallbacks when platformdirs is not available (graceful for global installs)
+    def _user_config_dir(app: str) -> Path:
+        return Path.home() / ".config" / app
+
+    def _user_state_dir(app: str) -> Path:
+        return Path.home() / ".local" / "share" / app
 
 APP = "edge-assistant"
-CFG_DIR = Path(user_config_dir(APP))
-STATE_DIR = Path(user_state_dir(APP))
+CFG_DIR = _user_config_dir(APP)
+STATE_DIR = _user_state_dir(APP)
 CFG_DIR.mkdir(parents=True, exist_ok=True)
 STATE_DIR.mkdir(parents=True, exist_ok=True)
 
