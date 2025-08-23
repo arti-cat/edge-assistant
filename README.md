@@ -58,7 +58,7 @@ edge-assistant ask "What's new in retrieval-augmented generation?" --thread note
 edge-assistant edit README.md "Add a concise Quickstart"
 ```
 
-Dev notes
+Dev notes   
 ---------
 
 - The code is split into: `cli.py` (Typer CLI), `engine.py` (Responses wrapper), `tools.py` (diffs + tool registry), and `state.py` (XDG-based state).
