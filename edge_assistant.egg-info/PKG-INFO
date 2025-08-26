@@ -8,6 +8,7 @@ Requires-Dist: openai
 Requires-Dist: typer
 Requires-Dist: rich
 Requires-Dist: platformdirs
+Requires-Dist: python-dotenv
 
 # edge-assistant
 
@@ -30,10 +31,16 @@ pip install --upgrade pip
 pip install -e .
 ```
 
-3. Configure your OpenAI key:
+3. Configure your OpenAI key (choose one option):
 
+**Option A: Environment variable**
 ```bash
 export OPENAI_API_KEY="sk-..."
+```
+
+**Option B: .env file (recommended)**
+```bash
+echo 'OPENAI_API_KEY="sk-..."' > .env
 ```
 
 4. See available commands:
@@ -69,7 +76,14 @@ edge-assistant ask "What's new in retrieval-augmented generation?" --thread note
 edge-assistant edit README.md "Add a concise Quickstart"
 ```
 
-Dev notes
+- Analyze an image:
+
+```bash
+edge-assistant analyze-image photo.jpg "Describe what you see in this image"
+edge-assistant analyze-image document.png "Extract all text" --system "You are an OCR specialist"
+```
+
+Dev notes   
 ---------
 
 - The code is split into: `cli.py` (Typer CLI), `engine.py` (Responses wrapper), `tools.py` (diffs + tool registry), and `state.py` (XDG-based state).

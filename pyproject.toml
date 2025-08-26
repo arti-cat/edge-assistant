@@ -8,7 +8,8 @@ dependencies = [
   "openai",
   "typer",
   "rich",
-  "platformdirs"
+  "platformdirs",
+  "python-dotenv"
 ]
 
 [project.scripts]

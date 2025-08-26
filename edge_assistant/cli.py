@@ -201,6 +201,30 @@ def agent(task: str, approve: bool = typer.Option(False, "--approve")):
     if not acted:
         console.print(Markdown(getattr(resp, "output_text", "")))
 
+# ---------- IMAGE ANALYSIS ----------
+@app.command("analyze-image")
+def analyze_image(
+    image_path: Path = typer.Argument(..., exists=True, dir_okay=False, resolve_path=True),
+    prompt: str = typer.Argument(..., help="Description of what you want to analyze in the image."),
+    system: Optional[str] = typer.Option(None, "--system", "-s", help="System/developer prompt for analysis context."),
+    model: str = typer.Option("gpt-4o", "--model", "-m", help="Vision model to use.")
+):
+    """Analyze an image using GPT-4 Vision with custom prompts."""
+    try:
+        result = eng.analyze_image(
+            image_path=str(image_path),
+            user_prompt=prompt,
+            system_prompt=system,
+            model=model
+        )
+        console.print(Markdown(result))
+    except FileNotFoundError as e:
+        console.print(f"[red]Error: {e}[/red]")
+        raise typer.Exit(1)
+    except Exception as e:
+        console.print(f"[red]Error analyzing image: {e}[/red]")
+        raise typer.Exit(1)
+
 def main():
     app()
 
