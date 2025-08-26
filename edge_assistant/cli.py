@@ -10,34 +10,76 @@ from rich.panel import Panel
 from rich.syntax import Syntax
 
 from .engine import Engine
-from .state import get_thread_id, set_thread_id, kb_ids, add_kb_ids
+from .state import get_thread_id, set_thread_id, kb_ids, add_kb_ids, get_multimodal_thread_info, update_multimodal_thread, clear_multimodal_thread, cleanup_old_multimodal_threads, get_multimodal_thread_id, get_thread_content_summary
 from .tools import unified, extract_between, extract_urls_from_response, function_tools
 
 app = typer.Typer(add_completion=False)
 console = Console()
 eng = Engine()
 
-# ---------- ASK ----------
+# ---------- ASK (Enhanced with Unified Engine) ----------
 @app.command("ask")
 def ask(
     prompt: str = typer.Argument(..., help="Your question/instruction."),
     model: str = typer.Option(None, "--model", "-m"),
     thread: Optional[str] = typer.Option(None, "--thread", "-t", help="Thread name to maintain context."),
     stream: bool = typer.Option(False, "--stream", "-s", help="Stream tokens as they arrive"),
-    system: Optional[str] = typer.Option(None, "--system", help="Optional system instructions.")
+    system: Optional[str] = typer.Option(None, "--system", help="Optional system instructions."),
+    use_multimodal_engine: bool = typer.Option(True, "--multimodal/--legacy", help="Use unified multimodal engine (recommended).")
 ):
-    prev = get_thread_id(thread)
-    resp = eng.send(
-        input=prompt,
-        model=model,
-        instructions=system,
-        previous_response_id=prev,
-        stream=stream
-    )
-    if not stream:
-        console.print(Markdown(resp.output_text))
-    if getattr(resp, "id", None):
-        set_thread_id(resp.id, thread)
+    """Ask a text question with optional threading. Now uses unified multimodal engine by default."""
+    
+    if use_multimodal_engine:
+        # Use new unified multimodal engine for consistent Responses API usage
+        try:
+            # Get multimodal thread info (backward compatible with text threads)
+            prev_response_id = get_multimodal_thread_id(thread) if thread else None
+            if not prev_response_id and thread:
+                # Try legacy text thread ID for backward compatibility
+                prev_response_id = get_thread_id(thread)
+            
+            resp = eng.analyze_multimodal_content(
+                content_path=None,  # Text-only
+                user_prompt=prompt,
+                system_prompt=system,
+                model=model,
+                previous_response_id=prev_response_id,
+                content_type="text"
+            )
+            
+            # Display response
+            if hasattr(resp, 'output') and resp.output:
+                content = resp.output[0].content[0].text
+                console.print(Markdown(content))
+            else:
+                console.print(Markdown(getattr(resp, 'output_text', str(resp))))
+            
+            # Update thread state
+            if getattr(resp, "id", None) and thread:
+                model_used = getattr(resp, 'model', model or eng.model_default)
+                update_multimodal_thread(thread, resp.id, "text", model_used)
+                # Also update legacy thread for backward compatibility
+                set_thread_id(resp.id, thread)
+                
+        except Exception as e:
+            console.print(f"[red]Error with multimodal engine: {e}[/red]")
+            console.print("[yellow]Falling back to legacy engine...[/yellow]")
+            use_multimodal_engine = False
+    
+    if not use_multimodal_engine:
+        # Legacy engine path (original implementation)
+        prev = get_thread_id(thread)
+        resp = eng.send(
+            input=prompt,
+            model=model,
+            instructions=system,
+            previous_response_id=prev,
+            stream=stream
+        )
+        if not stream:
+            console.print(Markdown(resp.output_text))
+        if getattr(resp, "id", None):
+            set_thread_id(resp.id, thread)
 
 # ---------- RESEARCH (web_search) ----------
 @app.command("research")
@@ -201,26 +243,131 @@ def agent(task: str, approve: bool = typer.Option(False, "--approve")):
     if not acted:
         console.print(Markdown(getattr(resp, "output_text", "")))
 
-# ---------- IMAGE ANALYSIS ----------
-@app.command("analyze-image")
-def analyze_image(
-    image_path: Path = typer.Argument(..., exists=True, dir_okay=False, resolve_path=True),
-    prompt: str = typer.Argument(..., help="Description of what you want to analyze in the image."),
+# ---------- UNIFIED MULTIMODAL ANALYSIS ----------
+@app.command("analyze")
+def analyze(
+    prompt: str = typer.Argument(..., help="Your question or instruction about the content."),
+    content_path: Optional[Path] = typer.Option(None, "--file", "-f", exists=True, dir_okay=False, resolve_path=True,
+                                                help="Path to content file (image, audio, video, document). Leave empty for text-only."),
     system: Optional[str] = typer.Option(None, "--system", "-s", help="System/developer prompt for analysis context."),
-    model: str = typer.Option("gpt-4o", "--model", "-m", help="Vision model to use.")
+    model: Optional[str] = typer.Option(None, "--model", "-m", help="Model to use (auto-selected based on content type)."),
+    thread: Optional[str] = typer.Option(None, "--thread", "-t", help="Thread name to maintain context across interactions."),
+    content_type: str = typer.Option("auto", "--type", help="Content type: auto, text, image, audio, video, file."),
+    max_interactions: int = typer.Option(20, "--max-interactions", help="Maximum interactions per thread (default: 20)."),
+    clear_thread: bool = typer.Option(False, "--clear-thread", help="Clear the specified thread before analysis.")
 ):
-    """Analyze an image using GPT-4 Vision with custom prompts."""
+    """Unified analysis command supporting text, images, audio, video, and files with threading."""
     try:
-        result = eng.analyze_image(
-            image_path=str(image_path),
-            user_prompt=prompt,
-            system_prompt=system,
-            model=model
-        )
-        console.print(Markdown(result))
+        # Auto-cleanup old threads
+        cleanup_old_multimodal_threads()
+        
+        # Handle thread clearing
+        if clear_thread and thread:
+            if clear_multimodal_thread(thread):
+                console.print(f"[green]Cleared thread '{thread}'[/green]")
+            else:
+                console.print(f"[yellow]Thread '{thread}' does not exist[/yellow]")
+            return
+        
+        # Determine content type and path
+        content_path_str = str(content_path) if content_path else None
+        
+        if thread:
+            # Threaded analysis with context
+            thread_info = get_multimodal_thread_info(thread)
+            
+            # Check interaction limits
+            if thread_info["total_interactions"] >= max_interactions:
+                console.print(f"[red]Thread '{thread}' has reached max interactions ({max_interactions}). Use --clear-thread to reset.[/red]")
+                raise typer.Exit(1)
+            
+            prev_response_id = get_multimodal_thread_id(thread)
+            
+            # Show thread status
+            if thread_info["total_interactions"] > 0:
+                summary = get_thread_content_summary(thread)
+                console.print(f"[dim]Thread '{thread}': {summary}[/dim]")
+            
+            # Call unified multimodal analysis
+            result = eng.analyze_multimodal_content(
+                content_path=content_path_str,
+                user_prompt=prompt,
+                system_prompt=system,
+                model=model,
+                previous_response_id=prev_response_id,
+                content_type=content_type
+            )
+            
+            # Update thread state with detected content type
+            detected_type = content_type if content_type != "auto" else eng._detect_content_type(content_path_str) if content_path_str else "text"
+            model_used = getattr(result, 'model', model or eng.model_default)
+            
+            if getattr(result, "id", None):
+                update_multimodal_thread(thread, result.id, detected_type, model_used)
+                
+        else:
+            # Fresh context analysis
+            result = eng.analyze_multimodal_content(
+                content_path=content_path_str,
+                user_prompt=prompt,
+                system_prompt=system,
+                model=model,
+                previous_response_id=None,
+                content_type=content_type
+            )
+        
+        # Display result
+        output_text = getattr(result, 'output_text', None)
+        if output_text:
+            console.print(Markdown(output_text))
+        elif hasattr(result, 'output') and result.output:
+            # Handle Responses API output format
+            content = result.output[0].content[0].text if result.output[0].content else str(result)
+            console.print(Markdown(content))
+        else:
+            console.print(str(result))
+        
+    except NotImplementedError as e:
+        console.print(f"[yellow]Feature not yet available: {e}[/yellow]")
+        raise typer.Exit(1)
     except FileNotFoundError as e:
         console.print(f"[red]Error: {e}[/red]")
         raise typer.Exit(1)
+    except Exception as e:
+        console.print(f"[red]Error during analysis: {e}[/red]")
+        raise typer.Exit(1)
+
+# ---------- LEGACY IMAGE ANALYSIS (for backward compatibility) ----------
+@app.command("analyze-image")
+def analyze_image_legacy(
+    image_path: Path = typer.Argument(..., exists=True, dir_okay=False, resolve_path=True),
+    prompt: str = typer.Argument(..., help="Description of what you want to analyze in the image."),
+    system: Optional[str] = typer.Option(None, "--system", "-s", help="System/developer prompt for analysis context."),
+    model: Optional[str] = typer.Option(None, "--model", "-m", help="Vision model to use."),
+    thread: Optional[str] = typer.Option(None, "--thread", "-t", help="Thread name to maintain context across images."),
+    max_images: int = typer.Option(5, "--max-images", help="Maximum images per thread (default: 5)."),
+    clear_thread: bool = typer.Option(False, "--clear-thread", help="Clear the specified thread before analysis.")
+):
+    """Legacy: Analyze an image. Use 'analyze' command instead for unified multimodal support."""
+    console.print("[yellow]Note: 'analyze-image' is deprecated. Use 'edge-assistant analyze' for full multimodal support.[/yellow]")
+    
+    # Convert max_images to max_interactions (images are just one type of interaction now)
+    max_interactions = max_images * 4  # Allow more interactions since we support mixed content
+    
+    # Redirect to unified analyze command
+    try:
+        analyze(
+            content_path=image_path,
+            prompt=prompt,
+            system=system,
+            model=model,
+            thread=thread,
+            content_type="image",
+            max_interactions=max_interactions,
+            clear_thread=clear_thread
+        )
+    except SystemExit:
+        raise
     except Exception as e:
         console.print(f"[red]Error analyzing image: {e}[/red]")
         raise typer.Exit(1)

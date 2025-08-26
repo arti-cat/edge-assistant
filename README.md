@@ -65,18 +65,60 @@ edge-assistant ask "What's new in retrieval-augmented generation?" --thread note
 edge-assistant edit README.md "Add a concise Quickstart"
 ```
 
-- Analyze an image:
+- Analyze images:
 
 ```bash
+# Single image analysis (fresh context)
 edge-assistant analyze-image photo.jpg "Describe what you see in this image"
 edge-assistant analyze-image document.png "Extract all text" --system "You are an OCR specialist"
+
+# Multi-image conversation with threading
+edge-assistant analyze-image img1.jpg "Describe this image" --thread vision-session
+edge-assistant analyze-image img2.jpg "How does this compare to the previous image?" --thread vision-session
+edge-assistant analyze-image img3.jpg "What patterns do you see across all three images?" --thread vision-session
+
+# Thread management
+edge-assistant analyze-image --clear-thread --thread vision-session  # Clear thread
+```
+
+Image Analysis Features
+-----------------------
+
+### Threading Support
+- **Fresh Context (default)**: Each image analysis is independent
+- **Threaded Conversations**: Use `--thread` to maintain context across multiple images
+- **Smart Limits**: Max 5 images per thread (configurable with `--max-images`)
+- **Auto-cleanup**: Old threads (7+ days) are automatically removed
+
+### Thread Management
+```bash
+# Check thread status (shows image count)
+edge-assistant analyze-image img.jpg "Describe this" --thread my-session
+
+# Clear a specific thread
+edge-assistant analyze-image --clear-thread --thread my-session
+
+# Set custom image limit per thread
+edge-assistant analyze-image img.jpg "Analyze this" --thread session --max-images 10
+```
+
+### Specialized Analysis examples
+```bash
+# Health & Safety inspection
+edge-assistant analyze-image facility.jpg "Assess safety compliance" --system "You are a health and safety inspector"
+
+# Document extraction
+edge-assistant analyze-image receipt.png "Extract all text and amounts" --system "You are an OCR specialist with accounting expertise"
+
+# Technical analysis
+edge-assistant analyze-image diagram.png "Explain this system architecture" --system "You are a software architect"
 ```
 
 Dev notes   
 ---------
 
 - The code is split into: `cli.py` (Typer CLI), `engine.py` (Responses wrapper), `tools.py` (diffs + tool registry), and `state.py` (XDG-based state).
-- Add deps to your environment: `openai`, `typer`, `rich`, `platformdirs`.
+- Add deps to your environment: `openai`, `typer`, `rich`, `platformdirs`, `python-dotenv`.
 
 Testing helper
 --------------

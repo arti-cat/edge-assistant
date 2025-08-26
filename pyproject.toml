@@ -18,3 +18,6 @@ edge-assistant = "edge_assistant.cli:app"
 [build-system]
 requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["edge_assistant"]
