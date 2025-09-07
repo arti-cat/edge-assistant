@@ -145,14 +145,56 @@ def research(
 # ---------- KB INDEX / KB RESEARCH (file_search) ----------
 @app.command("kb-index")
 def kb_index(folder: Path = typer.Argument(..., exists=True, file_okay=False)):
+    from .state import get_kb_vector_store_id, set_kb_vector_store_id
+    
     count = 0
     ids = []
+    
+    # Upload files
     for p in folder.rglob("*"):
         if p.is_file() and p.suffix.lower() in {".md", ".txt", ".pdf", ".py", ".rst"}:
             fid = eng.upload_for_kb(p)
             ids.append(fid); count += 1
+    
+    if not ids:
+        console.print("[yellow]No files found to index.[/yellow]")
+        return
+    
+    # Create or get vector store
+    vector_store_id = get_kb_vector_store_id()
+    if not vector_store_id:
+        console.print("[blue]Creating new vector store...[/blue]")
+        vector_store_id = eng.create_vector_store("edge-assistant-kb")
+        set_kb_vector_store_id(vector_store_id)
+    
+    # Add files to vector store
+    console.print(f"[blue]Adding {len(ids)} files to vector store...[/blue]")
+    eng.add_files_to_vector_store(vector_store_id, ids)
+    
+    # Still store individual file IDs for backward compatibility
     add_kb_ids(ids)
     console.print(f"[green]Indexed {count} files ({len(ids)} new).[/green]")
+
+@app.command("kb-list")
+def kb_list():
+    """List files in the knowledge base."""
+    from .state import get_kb_vector_store_id
+    
+    files = kb_ids()
+    vector_store_id = get_kb_vector_store_id()
+    
+    if not files and not vector_store_id:
+        console.print("[yellow]No knowledge base found. Run: edge-assistant kb-index ./docs[/yellow]")
+        return
+    
+    console.print(f"[blue]Knowledge Base Status:[/blue]")
+    console.print(f"  File IDs: {len(files)} files")
+    console.print(f"  Vector Store: {vector_store_id or 'None'}")
+    
+    if files:
+        console.print(f"\n[blue]Indexed Files (by ID):[/blue]")
+        for i, fid in enumerate(files, 1):
+            console.print(f"  {i}. {fid}")
 
 @app.command("kb-research")
 def kb_research(
@@ -164,11 +206,18 @@ def kb_research(
     if not files:
         raise typer.Exit("No KB files. Run: edge-assistant kb-index ./docs")
 
+    # Get vector store ID from state - we need to update kb-index to create vector stores
+    from .state import get_kb_vector_store_id
+    vector_store_id = get_kb_vector_store_id()
+    
+    if not vector_store_id:
+        console.print("[red]Error: No vector store found. Please re-run kb-index to create one.[/red]")
+        raise typer.Exit(1)
+    
     resp = eng.send(
         model=model,
         input=f"Answer using the provided knowledge files. Cite sources clearly. Q: {query}",
-        tools=[{"type": "file_search"}],
-        attachments=[{"file_id": fid, "tools": [{"type":"file_search"}]} for fid in files],
+        tools=[{"type": "file_search", "vector_store_ids": [vector_store_id]}],
         stream=stream,
     )
     if not stream:

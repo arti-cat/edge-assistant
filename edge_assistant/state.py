@@ -63,6 +63,17 @@ def add_kb_ids(ids: List[str]) -> None:
     s["kb_file_ids"] = sorted(prev)
     _save(s)
 
+def get_kb_vector_store_id() -> Optional[str]:
+    """Get the vector store ID for knowledge base."""
+    s = _load()
+    return s.get("kb_vector_store_id")
+
+def set_kb_vector_store_id(vector_store_id: str) -> None:
+    """Set the vector store ID for knowledge base."""
+    s = _load()
+    s["kb_vector_store_id"] = vector_store_id
+    _save(s)
+
 # ---------- VISION THREAD MANAGEMENT ----------
 
 # ---------- MULTIMODAL THREAD MANAGEMENT ----------

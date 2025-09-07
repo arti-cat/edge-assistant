@@ -1,7 +1,6 @@
 from __future__ import annotations
 from contextlib import suppress
-from typing import Any, Dict, Iterable, List, Optional
-import os
+from typing import Any, Dict, List, Optional
 from pathlib import Path
 
 
@@ -85,11 +84,14 @@ class Engine:
                 final = s.get_final_response()
                 return final
             # Fallback: create pseudo response-like object
-            class R: pass
+            class R:
+                def __init__(self):
+                    self.output_text = ""
+                    self.id = None
+                    self.output = []
+            
             r = R()
             r.output_text = "".join(text_chunks)
-            r.id = None
-            r.output = []
             return r
 
         return self._get_client().responses.create(**kwargs)
@@ -97,8 +99,21 @@ class Engine:
     # Convenience
     def upload_for_kb(self, path) -> str:
         with open(path, "rb") as f:
-            file = self._get_client().files.create(file=f, purpose="file_search")
+            file = self._get_client().files.create(file=f, purpose="assistants")
         return file.id
+
+    def create_vector_store(self, name: str) -> str:
+        """Create a vector store and return its ID."""
+        vector_store = self._get_client().vector_stores.create(name=name)
+        return vector_store.id
+
+    def add_files_to_vector_store(self, vector_store_id: str, file_ids: List[str]) -> None:
+        """Add files to an existing vector store."""
+        for file_id in file_ids:
+            self._get_client().vector_stores.files.create(
+                vector_store_id=vector_store_id,
+                file_id=file_id
+            )
 
     def analyze_image(self, image_path: str, user_prompt: str, system_prompt: Optional[str] = None, model: Optional[str] = None):
         """Analyze an image with optional system and user prompts using vision capabilities."""
@@ -159,7 +174,7 @@ class Engine:
         
         return response.choices[0].message.content
 
-    def analyze_multimodal_content(self, content_path: str = None, user_prompt: str = "", 
+    def analyze_multimodal_content(self, content_path: Optional[str] = None, user_prompt: str = "", 
                                   system_prompt: Optional[str] = None, model: Optional[str] = None, 
                                   previous_response_id: Optional[str] = None, content_type: str = "auto"):
         """
@@ -191,6 +206,8 @@ class Engine:
             
         elif content_type == "image":
             # Image analysis
+            if not content_path:
+                raise ValueError("content_path is required for image analysis")
             img_path = Path(content_path)
             if not img_path.exists():
                 raise FileNotFoundError(f"Image file not found: {content_path}")
@@ -243,13 +260,15 @@ class Engine:
             
         elif content_type == "file":
             # File analysis using file attachments
+            if not content_path:
+                raise ValueError("content_path is required for file analysis")
             file_path = Path(content_path)
             if not file_path.exists():
                 raise FileNotFoundError(f"File not found: {content_path}")
             
             # Upload file for analysis
             with open(file_path, "rb") as f:
-                file = self._get_client().files.create(file=f, purpose="file_search")
+                file = self._get_client().files.create(file=f, purpose="assistants")
             
             input_content = user_prompt or f"Analyze this file: {file_path.name}"
             model = model or "gpt-4o"
