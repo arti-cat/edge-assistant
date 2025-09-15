@@ -303,7 +303,8 @@ def analyze(
     thread: Optional[str] = typer.Option(None, "--thread", "-t", help="Thread name to maintain context across interactions."),
     content_type: str = typer.Option("auto", "--type", help="Content type: auto, text, image, audio, video, file."),
     max_interactions: int = typer.Option(20, "--max-interactions", help="Maximum interactions per thread (default: 20)."),
-    clear_thread: bool = typer.Option(False, "--clear-thread", help="Clear the specified thread before analysis.")
+    clear_thread: bool = typer.Option(False, "--clear-thread", help="Clear the specified thread before analysis."),
+    save: Optional[str] = typer.Option(None, "--save", help="Save output to a new file (provide filename or use 'auto' for automatic naming).")
 ):
     """Unified analysis command supporting text, images, audio, video, and files with threading."""
     try:
@@ -365,16 +366,33 @@ def analyze(
                 content_type=content_type
             )
         
-        # Display result
+        # Extract and display result
         output_text = getattr(result, 'output_text', None)
-        if output_text:
-            console.print(Markdown(output_text))
-        elif hasattr(result, 'output') and result.output:
+        if not output_text and hasattr(result, 'output') and result.output:
             # Handle Responses API output format
-            content = result.output[0].content[0].text if result.output[0].content else str(result)
-            console.print(Markdown(content))
-        else:
-            console.print(str(result))
+            output_text = result.output[0].content[0].text if result.output[0].content else str(result)
+        elif not output_text:
+            output_text = str(result)
+
+        # Save to file if requested
+        if save and content_path:
+            if save == "auto":
+                # Auto-generate filename based on original file
+                original_stem = content_path.stem
+                original_dir = content_path.parent
+                save_path = original_dir / f"{original_stem}_converted.md"
+            else:
+                # Use provided filename in the same directory as the input file
+                save_path = content_path.parent / save
+
+            try:
+                save_path.write_text(output_text, encoding="utf-8")
+                console.print(f"[green]Output saved to: {save_path}[/green]")
+            except Exception as e:
+                console.print(f"[red]Error saving file: {e}[/red]")
+
+        # Display result
+        console.print(Markdown(output_text))
         
     except NotImplementedError as e:
         console.print(f"[yellow]Feature not yet available: {e}[/yellow]")

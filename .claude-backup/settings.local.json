@@ -1,0 +1,20 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(uv run ruff check:*)",
+      "Bash(uv run ruff format:*)",
+      "Bash(git add:*)",
+      "Bash(git rebase:*)",
+      "WebFetch(domain:www.endclothing.com)",
+      "WebFetch(domain:claudelog.com)",
+      "WebFetch(domain:www.claudelog.com)",
+      "WebFetch(domain:www.claudelog.com)",
+      "WebFetch(domain:www.claudelog.com)",
+      "Bash(uv run:*)",
+      "Bash(rm:*)",
+      "WebSearch",
+      "WebFetch(domain:cookbook.openai.com)"
+    ],
+    "deny": []
+  }
+}

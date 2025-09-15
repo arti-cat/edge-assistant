@@ -1,0 +1,202 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git:*)",
+      "Bash(npm run:*)",
+      "Bash(python:*)",
+      "Bash(ls:*)",
+      "Bash(cat:*)",
+      "Bash(grep:*)",
+      "Bash(find:*)",
+      "Read(./src/**/*.py)",
+      "Read(./src/**/*.js)",
+      "Read(./src/**/*.ts)",
+      "Read(./src/**/*.tsx)",
+      "Read(./src/**/*.java)",
+      "Read(./src/**/*.go)",
+      "Read(./src/**/*.rs)",
+      "Read(./src/**/*.cpp)",
+      "Read(./src/**/*.c)",
+      "Read(./src/**/*.h)",
+      "Read(./src/**/*.yaml)",
+      "Read(./src/**/*.yml)",
+      "Read(./src/**/*.json)",
+      "Read(./lib/**)",
+      "Read(./app/**)",
+      "Read(./components/**)",
+      "Read(./utils/**)",
+      "Read(./config/**/*.yaml)",
+      "Read(./config/**/*.yml)",
+      "Read(./config/**/*.json)",
+      "Read(./docs/**)",
+      "Read(./.claude/**)",
+      "Read(./reports/**)",
+      "Read(./tests/**)",
+      "Read(./test/**)",
+      "Read(./spec/**)",
+      "Read(./README*)",
+      "Read(./package.json)",
+      "Read(./requirements.txt)",
+      "Read(./Cargo.toml)",
+      "Read(./go.mod)",
+      "Read(./setup.py)",
+      "Read(./pyproject.toml)",
+      "Write(./src/**/*.py)",
+      "Write(./src/**/*.js)",
+      "Write(./src/**/*.ts)",
+      "Write(./src/**/*.tsx)",
+      "Write(./src/**/*.java)",
+      "Write(./src/**/*.go)",
+      "Write(./src/**/*.rs)",
+      "Write(./src/**/*.cpp)",
+      "Write(./src/**/*.c)",
+      "Write(./src/**/*.h)",
+      "Write(./tests/**)",
+      "Write(./test/**)",
+      "Write(./spec/**)",
+      "Write(./docs/**)",
+      "Write(./reports/**)",
+      "Edit(./src/**/*.py)",
+      "Edit(./src/**/*.js)",
+      "Edit(./src/**/*.ts)",
+      "Edit(./src/**/*.tsx)",
+      "Edit(./src/**/*.java)",
+      "Edit(./src/**/*.go)",
+      "Edit(./src/**/*.rs)",
+      "Edit(./src/**/*.cpp)",
+      "Edit(./src/**/*.c)",
+      "Edit(./src/**/*.h)",
+      "Edit(./config/**/*.yaml)",
+      "Edit(./config/**/*.yml)",
+      "Edit(./config/**/*.json)",
+      "Edit(./tests/**)",
+      "Edit(./test/**)",
+      "Edit(./spec/**)",
+      "Edit(./docs/**)",
+      "Edit(./.claude/**)",
+      "Edit(./package.json)",
+      "Edit(./requirements.txt)",
+      "Edit(./Cargo.toml)",
+      "Edit(./pyproject.toml)"
+    ],
+    "deny": [
+      "Read(./.env)",
+      "Read(./.env.*)",
+      "Read(./secrets/**)",
+      "Read(./sensitive/**)",
+      "Read(/etc/passwd)",
+      "Read(/etc/shadow)",
+      "Read(/home/*/.ssh/**)",
+      "Write(./.env)",
+      "Write(./.env.*)",
+      "Write(./secrets/**)",
+      "Write(./sensitive/**)",
+      "Edit(./.env)",
+      "Edit(./.env.*)",
+      "Edit(./secrets/**)",
+      "Edit(./sensitive/**)",
+      "Bash(rm -rf /*)",
+      "Bash(sudo rm:*)",
+      "Bash(chmod 777:*)"
+    ]
+  },
+  "statusLine": {
+    "type": "command",
+    "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/statusline.sh"
+  },
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/context-prime.py",
+            "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/bundle-manager.py",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/security-filter.py",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Read|Write|Edit|MultiEdit|Bash|Task",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/activity-logger.py",
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "matcher": "Task",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/agent-coordinator.py",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/task-tracker.py",
+            "timeout": 3
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/session-end.py",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/stop-control.py",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "SubagentStop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/subagent-stop.py",
+            "timeout": 5
+          }
+        ]
+      }
+    ]
+  }
+}

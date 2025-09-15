@@ -259,34 +259,25 @@ class Engine:
             raise NotImplementedError("Video analysis will be supported when OpenAI releases video capabilities in Responses API")
             
         elif content_type == "file":
-            # File analysis using file attachments
+            # File analysis by reading content directly
             if not content_path:
                 raise ValueError("content_path is required for file analysis")
             file_path = Path(content_path)
             if not file_path.exists():
                 raise FileNotFoundError(f"File not found: {content_path}")
-            
-            # Upload file for analysis
-            with open(file_path, "rb") as f:
-                file = self._get_client().files.create(file=f, purpose="assistants")
-            
-            input_content = user_prompt or f"Analyze this file: {file_path.name}"
+
+            # Read file content directly for text-based files
+            try:
+                with open(file_path, "r", encoding="utf-8") as f:
+                    file_content = f.read()
+            except UnicodeDecodeError:
+                # For binary files, fall back to basic info
+                file_content = f"Binary file: {file_path.name} ({file_path.stat().st_size} bytes)"
+
+            # Combine user prompt with file content
+            combined_prompt = f"{user_prompt}\n\n--- File: {file_path.name} ---\n{file_content}"
+            input_content = combined_prompt
             model = model or "gpt-4o"
-            
-            # Use file attachment in Responses API
-            kwargs = {
-                "model": model,
-                "input": input_content,
-                "attachments": [{"file_id": file.id, "tools": [{"type": "file_search"}]}],
-                "max_output_tokens": 1000
-            }
-            
-            if system_prompt:
-                kwargs["instructions"] = system_prompt
-            if previous_response_id:
-                kwargs["previous_response_id"] = previous_response_id
-                
-            return self._get_client().responses.create(**kwargs)
         
         else:
             raise ValueError(f"Unsupported content type: {content_type}")
@@ -295,7 +286,7 @@ class Engine:
         kwargs = {
             "model": model,
             "input": input_content,
-            "max_output_tokens": 1000
+            "max_output_tokens": 4000
         }
         
         if system_prompt:
