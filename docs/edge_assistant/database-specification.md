@@ -148,7 +148,7 @@ def list_all_threads() -> Dict[str, Any]:
     state = _load()
     return {
         "multimodal": state.get("multimodal_threads", {}),
-        "legacy": state.get("conversation_threads", {}),
+        "legacy": state.get("threads", {}),
         "vision": state.get("vision_threads", {})
     }
 ```

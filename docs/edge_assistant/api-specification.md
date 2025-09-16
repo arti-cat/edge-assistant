@@ -72,7 +72,7 @@ response = client.responses.create(
 #### File Analysis
 ```python
 # Upload file for analysis
-file = client.files.create(file=f, purpose="file_search")
+file = client.files.create(file=f, purpose="assistants")
 
 response = client.responses.create(
     model="gpt-4o",
@@ -128,8 +128,24 @@ response = client.responses.create(
 ```python
 def upload_for_kb(self, path) -> str:
     with open(path, "rb") as f:
-        file = client.files.create(file=f, purpose="file_search")
+        file = client.files.create(file=f, purpose="assistants")
     return file.id
+```
+
+### Vector Store Management
+```python
+def create_vector_store(self, name: str) -> str:
+    """Create a vector store and return its ID."""
+    vector_store = self._get_client().vector_stores.create(name=name)
+    return vector_store.id
+
+def add_files_to_vector_store(self, vector_store_id: str, file_ids: List[str]) -> None:
+    """Add files to an existing vector store."""
+    for file_id in file_ids:
+        self._get_client().vector_stores.files.create(
+            vector_store_id=vector_store_id,
+            file_id=file_id
+        )
 ```
 
 ### Vector Search

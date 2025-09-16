@@ -199,3 +199,16 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Development artifacts - edge-assistant specific
+/reports/
+/ai-docs/
+*.egg-info/
+.claude-backup/
+
+# Temporary development files
+debug_env.py
+AGENT_ORCHESTRATION_PLAN.md
+PYCONDUCTOR_USAGE_GUIDE.md
+GUIDELINES.md
+STARTER.MD

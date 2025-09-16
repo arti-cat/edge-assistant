@@ -152,7 +152,7 @@ Simple JSONL logging in `reports/`:
 ## Full workflow example
 
 # 1. Track the main project
-  /track "build AI pair programmer for wife's research using pyConductor"
+  /track "build AI pair programmer for programming and research using pyConductor"
 
   # 2. Prime context for domain
   /prime-research cli and llm programming-patterns

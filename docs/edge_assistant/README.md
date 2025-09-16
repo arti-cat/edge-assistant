@@ -11,6 +11,13 @@ This directory contains comprehensive technical specifications for the edge-assi
 - Authentication and error handling
 - Future API extensions (audio/video)
 
+### 🖥️ [CLI Specification](cli-specification.md)
+- Complete command reference and usage examples
+- Threading workflows and context management
+- Knowledge base operations (kb-index, kb-list, kb-research)
+- File editing and agent functionality
+- Advanced usage patterns and integration examples
+
 ### 🏗️ [Architecture Overview](architecture-overview.md)  
 - System architecture and component interactions
 - Design principles and patterns
