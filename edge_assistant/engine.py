@@ -94,7 +94,7 @@ class Engine:
             r.output_text = "".join(text_chunks)
             return r
 
-        return self._get_client().responses.create(**kwargs)
+        return self._handle_responses_api_call(**kwargs)
 
     # Convenience
     def upload_for_kb(self, path) -> str:
@@ -115,64 +115,92 @@ class Engine:
                 file_id=file_id
             )
 
+    def _handle_responses_api_call(self, **kwargs):
+        """Centralized Responses API call with error handling."""
+        try:
+            return self._get_client().responses.create(**kwargs)
+        except Exception as e:
+            # Log error details for debugging
+            error_details = {
+                'error_type': type(e).__name__,
+                'error_message': str(e),
+                'kwargs_model': kwargs.get('model'),
+                'input_type': type(kwargs.get('input')).__name__ if 'input' in kwargs else None
+            }
+            raise RuntimeError(f"Responses API call failed: {error_details}")
+
+    def _extract_response_text(self, response) -> str:
+        """Extract text content from Responses API response."""
+        if hasattr(response, 'output_text') and response.output_text:
+            return response.output_text
+        elif hasattr(response, 'output') and response.output:
+            # Handle structured output format
+            try:
+                return response.output[0].content[0].text
+            except (IndexError, AttributeError):
+                pass
+        return str(response)
+
+    def _get_image_mime_type(self, file_path: str) -> str:
+        """Get MIME type for image file based on extension."""
+        from pathlib import Path
+
+        extension = Path(file_path).suffix.lower()
+        mime_types = {
+            '.jpg': 'image/jpeg',
+            '.jpeg': 'image/jpeg',
+            '.png': 'image/png',
+            '.gif': 'image/gif',
+            '.webp': 'image/webp'
+        }
+        return mime_types.get(extension, 'image/jpeg')  # default fallback
+
     def analyze_image(self, image_path: str, user_prompt: str, system_prompt: Optional[str] = None, model: Optional[str] = None):
-        """Analyze an image with optional system and user prompts using vision capabilities."""
+        """Analyze an image with optional system and user prompts using Responses API."""
         import base64
         from pathlib import Path
-        
+
         # Read and encode image
         img_path = Path(image_path)
         if not img_path.exists():
             raise FileNotFoundError(f"Image file not found: {image_path}")
-        
+
         with open(img_path, "rb") as image_file:
             base64_image = base64.b64encode(image_file.read()).decode('utf-8')
-        
-        # Determine image format
-        file_extension = img_path.suffix.lower()
-        if file_extension in ['.jpg', '.jpeg']:
-            mime_type = "image/jpeg"
-        elif file_extension == '.png':
-            mime_type = "image/png"
-        elif file_extension == '.gif':
-            mime_type = "image/gif"
-        elif file_extension == '.webp':
-            mime_type = "image/webp"
-        else:
-            mime_type = "image/jpeg"  # default fallback
-        
-        # Build messages
-        messages = []
-        if system_prompt:
-            messages.append({"role": "system", "content": system_prompt})
-        
-        messages.append({
-            "role": "user", 
-            "content": [
-                {
-                    "type": "image_url",
-                    "image_url": {
-                        "url": f"data:{mime_type};base64,{base64_image}"
+
+        # Get MIME type using helper method
+        mime_type = self._get_image_mime_type(image_path)
+
+        # Build input for Responses API
+        input_content = [
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "input_image",
+                        "image_url": f"data:{mime_type};base64,{base64_image}"
+                    },
+                    {
+                        "type": "input_text",
+                        "text": user_prompt
                     }
-                },
-                {
-                    "type": "text",
-                    "text": user_prompt
-                }
-            ]
-        })
-        
-        # Use vision model by default
-        vision_model = model or "gpt-4o"
-        
-        # Send to OpenAI via responses API
-        response = self._get_client().chat.completions.create(
-            model=vision_model,
-            messages=messages,
-            max_tokens=1000
-        )
-        
-        return response.choices[0].message.content
+                ]
+            }
+        ]
+
+        # Build API call parameters
+        kwargs = {
+            "model": model or "gpt-4o",
+            "input": input_content,
+            "max_output_tokens": 1000
+        }
+
+        if system_prompt:
+            kwargs["instructions"] = system_prompt
+
+        # Use Responses API consistently with error handling
+        response = self._handle_responses_api_call(**kwargs)
+        return self._extract_response_text(response)
 
     def analyze_multimodal_content(self, content_path: Optional[str] = None, user_prompt: str = "", 
                                   system_prompt: Optional[str] = None, model: Optional[str] = None, 
@@ -211,23 +239,13 @@ class Engine:
             img_path = Path(content_path)
             if not img_path.exists():
                 raise FileNotFoundError(f"Image file not found: {content_path}")
-            
+
             with open(img_path, "rb") as image_file:
                 base64_image = base64.b64encode(image_file.read()).decode('utf-8')
-            
-            # Determine image format
-            file_extension = img_path.suffix.lower()
-            if file_extension in ['.jpg', '.jpeg']:
-                mime_type = "image/jpeg"
-            elif file_extension == '.png':
-                mime_type = "image/png"
-            elif file_extension == '.gif':
-                mime_type = "image/gif"
-            elif file_extension == '.webp':
-                mime_type = "image/webp"
-            else:
-                mime_type = "image/jpeg"  # default fallback
-            
+
+            # Get MIME type using helper method
+            mime_type = self._get_image_mime_type(content_path)
+
             # Build multimodal input for Responses API
             input_content = [
                 {
@@ -240,14 +258,14 @@ class Engine:
                     ]
                 }
             ]
-            
+
             # Add text if provided
             if user_prompt:
                 input_content[0]["content"].append({
                     "type": "input_text",
                     "text": user_prompt
                 })
-            
+
             model = model or "gpt-4o"  # Vision-capable model
             
         elif content_type == "audio":
@@ -293,8 +311,9 @@ class Engine:
             kwargs["instructions"] = system_prompt
         if previous_response_id:
             kwargs["previous_response_id"] = previous_response_id
-            
-        return self._get_client().responses.create(**kwargs)
+
+        response = self._handle_responses_api_call(**kwargs)
+        return response
     
     def _detect_content_type(self, file_path: str) -> str:
         """Detect content type based on file extension."""

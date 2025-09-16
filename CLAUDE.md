@@ -91,7 +91,10 @@ Production-ready framework leveraging Claude Code's native capabilities for soph
 - `/prime-research [focus]` - Optimize context for analysis tasks
 - `/prime-implement [feature]` - Prime for feature development
 - `/loadbundle [path]` - Restore from previous operation trails
-- Context7 MCP tools are available with full documentation of most libraries and dependencies - this should be used by agents when appropriate. 
+
+## Python Tools
+
+- YOU MUST use context7 mcp to check details of libraries.
 
 ## Focused Agent System
 

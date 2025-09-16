@@ -17,6 +17,11 @@ Load focused context for codebase analysis, pattern discovery, and requirements 
 3. **Identify patterns** - Coding conventions, architecture decisions, frameworks
 4. **Report findings** - Structured summary of codebase understanding
 
+## Python Tools
+
+- YOU MUST use context7 mcp to check details of libraries.
+
+
 The researcher agent will:
 - Discover existing patterns and conventions
 - Analyze technology stack and dependencies

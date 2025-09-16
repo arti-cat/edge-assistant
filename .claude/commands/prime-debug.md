@@ -18,6 +18,11 @@ Load focused context for understanding, reproducing, and fixing bugs or issues.
 4. **Map dependencies** - Understand code flow and related components
 5. **Prepare debug context** - Load relevant code and documentation
 
+
+## Python Tools
+
+- use context7 mcp to check details of libraries
+
 The researcher agent will:
 - Locate code areas most likely related to the issue
 - Examine existing tests and error patterns
