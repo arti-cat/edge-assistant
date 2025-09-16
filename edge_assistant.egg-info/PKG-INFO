@@ -1,14 +1,29 @@
 Metadata-Version: 2.4
 Name: edge-assistant
 Version: 0.1.0
-Summary: Lean research+editor CLI
+Summary: Unified multimodal CLI assistant built on OpenAI's latest Responses API
+Author-email: edge-assistant <contact@edge-assistant.dev>
+License: MIT
+Keywords: cli,assistant,multimodal,openai,research,analysis
+Classifier: Development Status :: 4 - Beta
+Classifier: Intended Audience :: Developers
+Classifier: License :: OSI Approved :: MIT License
+Classifier: Operating System :: OS Independent
+Classifier: Programming Language :: Python :: 3
+Classifier: Programming Language :: Python :: 3.10
+Classifier: Programming Language :: Python :: 3.11
+Classifier: Programming Language :: Python :: 3.12
+Classifier: Topic :: Software Development :: Libraries :: Python Modules
+Classifier: Topic :: Utilities
 Requires-Python: >=3.10
 Description-Content-Type: text/markdown
+License-File: LICENSE
 Requires-Dist: openai
 Requires-Dist: typer
 Requires-Dist: rich
 Requires-Dist: platformdirs
 Requires-Dist: python-dotenv
+Dynamic: license-file
 
 # edge-assistant
 

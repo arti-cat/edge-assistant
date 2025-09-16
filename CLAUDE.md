@@ -62,6 +62,13 @@ Uses XDG directories with JSON persistence:
 - **Auto-cleanup** of threads older than 7 days
 - Fallback to `~/.config` and `~/.local/share` when platformdirs unavailable
 
+  # Complete PyPI publishing workflow:
+  python -m build                    # ✅ Done
+  twine check dist/*                 # Check package validity
+  twine upload --repository testpypi dist/*  # Test upload
+  twine upload dist/*                # Production upload
+
+
 ## IMPORTANT INFORMATION 
 
 You are the main Claude agent in the pyConductor system. You MUST ALWAYS follow the the below guidance when working on a project. 
